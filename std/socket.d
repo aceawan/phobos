@@ -36,12 +36,10 @@
 /**
  * Socket primitives.
  * Example: See $(SAMPLESRC listener.d) and $(SAMPLESRC htmlget.d)
- * License: $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
- * Authors: Christopher E. Miller, $(WEB klickverbot.at, David Nadlinger),
- *      $(WEB thecybershadow.net, Vladimir Panteleev)
+ * License: $(HTTP www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+ * Authors: Christopher E. Miller, $(HTTP klickverbot.at, David Nadlinger),
+ *      $(HTTP thecybershadow.net, Vladimir Panteleev)
  * Source:  $(PHOBOSSRC std/_socket.d)
- * Macros:
- *      WIKI=Phobos/StdSocket
  */
 
 module std.socket;
@@ -50,8 +48,7 @@ import core.stdc.stdint, core.stdc.string, std.string, core.stdc.stdlib, std.con
 
 import core.stdc.config;
 import core.time : dur, Duration;
-import std.algorithm : max;
-import std.exception : assumeUnique, enforce, collectException;
+import std.exception;
 
 import std.internal.cstring;
 
@@ -63,7 +60,8 @@ version(Windows)
     pragma (lib, "ws2_32.lib");
     pragma (lib, "wsock32.lib");
 
-    private import core.sys.windows.windows, core.sys.windows.winsock2, std.windows.syserror;
+    public import core.sys.windows.winsock2;
+    private import core.sys.windows.windows, std.windows.syserror;
     private alias _ctimeval = core.sys.windows.winsock2.timeval;
     private alias _clinger = core.sys.windows.winsock2.linger;
 
@@ -145,31 +143,23 @@ version(unittest)
 /// Base exception thrown by $(D std.socket).
 class SocketException: Exception
 {
-    ///
-    this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null) pure nothrow
-    {
-        super(msg, file, line, next);
-    }
-
-    ///
-    this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__) pure nothrow
-    {
-        super(msg, next, file, line);
-    }
+    mixin basicExceptionCtors;
 }
 
 
-// Needs to be public so that SocketOSException can be thrown outside of
-// std.socket (since it uses it as a default argument), but it probably doesn't
-// need to actually show up in the docs, since there's not really any public
-// need for it outside of being a default argument.
+/*
+ * Needs to be public so that SocketOSException can be thrown outside of
+ * std.socket (since it uses it as a default argument), but it probably doesn't
+ * need to actually show up in the docs, since there's not really any public
+ * need for it outside of being a default argument.
+ */
 string formatSocketError(int err) @trusted
 {
     version(Posix)
     {
         char[80] buf;
         const(char)* cs;
-        version (linux)
+        version (CRuntime_Glibc)
         {
             cs = strerror_r(err, buf.ptr, buf.length);
         }
@@ -189,6 +179,14 @@ string formatSocketError(int err) @trusted
             else
                 return "Socket error " ~ to!string(err);
         }
+        else version (NetBSD)
+        {
+            auto errs = strerror_r(err, buf.ptr, buf.length);
+            if (errs == 0)
+                cs = buf.ptr;
+            else
+                return "Socket error " ~ to!string(err);
+        }
         else version (Solaris)
         {
             auto errs = strerror_r(err, buf.ptr, buf.length);
@@ -197,7 +195,7 @@ string formatSocketError(int err) @trusted
             else
                 return "Socket error " ~ to!string(err);
         }
-        else version (Android)
+        else version (CRuntime_Bionic)
         {
             auto errs = strerror_r(err, buf.ptr, buf.length);
             if (errs == 0)
@@ -210,9 +208,9 @@ string formatSocketError(int err) @trusted
 
         auto len = strlen(cs);
 
-        if(cs[len - 1] == '\n')
+        if (cs[len - 1] == '\n')
             len--;
-        if(cs[len - 1] == '\r')
+        if (cs[len - 1] == '\r')
             len--;
         return cs[0 .. len].idup;
     }
@@ -231,8 +229,10 @@ string formatSocketError(int err) @trusted
     return formatSocketError(_lasterr());
 }
 
-/// Socket exceptions representing network errors reported by the operating
-/// system.
+/**
+ * Socket exceptions representing network errors reported by the operating
+ * system.
+ */
 class SocketOSException: SocketException
 {
     int errorCode;     /// Platform-specific error code.
@@ -279,39 +279,24 @@ class SocketOSException: SocketException
 /// Socket exceptions representing invalid parameters specified by user code.
 class SocketParameterException: SocketException
 {
-    ///
-    this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null) pure nothrow
-    {
-        super(msg, file, line, next);
-    }
-
-    ///
-    this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__) pure nothrow
-    {
-        super(msg, next, file, line);
-    }
+    mixin basicExceptionCtors;
 }
 
-/// Socket exceptions representing attempts to use network capabilities not
-/// available on the current system.
+/**
+ * Socket exceptions representing attempts to use network capabilities not
+ * available on the current system.
+ */
 class SocketFeatureException: SocketException
 {
-    ///
-    this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null) pure nothrow
-    {
-        super(msg, file, line, next);
-    }
-
-    ///
-    this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__) pure nothrow
-    {
-        super(msg, next, file, line);
-    }
+    mixin basicExceptionCtors;
 }
 
 
-/// Return $(D true) if the last socket operation failed because the socket
-/// was in non-blocking mode and the operation would have blocked.
+/**
+ * Returns:
+ * $(D true) if the last socket operation failed because the socket
+ * was in non-blocking mode and the operation would have blocked.
+ */
 bool wouldHaveBlocked() nothrow @nogc
 {
     version(Windows)
@@ -340,7 +325,7 @@ shared static this() @system
         // The version is just a request.
         int val;
         val = WSAStartup(0x2020, &wd);
-        if(val)         // Request Winsock 2.2 for IPv6.
+        if (val)         // Request Winsock 2.2 for IPv6.
             throw new SocketOSException("Unable to initialize socket library", val);
 
         // These functions may not be present on older Windows versions.
@@ -403,37 +388,18 @@ enum SocketType: int
 /**
  * Protocol
  */
-version(Android)
+enum ProtocolType: int
 {
-    // no GGP on Android
-    enum ProtocolType: int
-    {
-        IP =    IPPROTO_IP,         /// Internet Protocol version 4
-        ICMP =  IPPROTO_ICMP,       /// Internet Control Message Protocol
-        IGMP =  IPPROTO_IGMP,       /// Internet Group Management Protocol
-        TCP =   IPPROTO_TCP,        /// Transmission Control Protocol
-        PUP =   IPPROTO_PUP,        /// PARC Universal Packet Protocol
-        UDP =   IPPROTO_UDP,        /// User Datagram Protocol
-        IDP =   IPPROTO_IDP,        /// Xerox NS protocol
-        RAW =   IPPROTO_RAW,        /// Raw IP packets
-        IPV6 =  IPPROTO_IPV6,       /// Internet Protocol version 6
-    }
-}
-else
-{
-    enum ProtocolType: int
-    {
-        IP =    IPPROTO_IP,         /// Internet Protocol version 4
-        ICMP =  IPPROTO_ICMP,       /// Internet Control Message Protocol
-        IGMP =  IPPROTO_IGMP,       /// Internet Group Management Protocol
-        GGP =   IPPROTO_GGP,        /// Gateway to Gateway Protocol
-        TCP =   IPPROTO_TCP,        /// Transmission Control Protocol
-        PUP =   IPPROTO_PUP,        /// PARC Universal Packet Protocol
-        UDP =   IPPROTO_UDP,        /// User Datagram Protocol
-        IDP =   IPPROTO_IDP,        /// Xerox NS protocol
-        RAW =   IPPROTO_RAW,        /// Raw IP packets
-        IPV6 =  IPPROTO_IPV6,       /// Internet Protocol version 6
-    }
+    IP =    IPPROTO_IP,         /// Internet Protocol version 4
+    ICMP =  IPPROTO_ICMP,       /// Internet Control Message Protocol
+    IGMP =  IPPROTO_IGMP,       /// Internet Group Management Protocol
+    GGP =   IPPROTO_GGP,        /// Gateway to Gateway Protocol
+    TCP =   IPPROTO_TCP,        /// Transmission Control Protocol
+    PUP =   IPPROTO_PUP,        /// PARC Universal Packet Protocol
+    UDP =   IPPROTO_UDP,        /// User Datagram Protocol
+    IDP =   IPPROTO_IDP,        /// Xerox NS protocol
+    RAW =   IPPROTO_RAW,        /// Raw IP packets
+    IPV6 =  IPPROTO_IPV6,       /// Internet Protocol version 6
 }
 
 
@@ -447,7 +413,7 @@ else
  * if (proto.getProtocolByType(ProtocolType.TCP))
  * {
  *     writefln("  Name: %s", proto.name);
- *     foreach(string s; proto.aliases)
+ *     foreach (string s; proto.aliases)
  *          writefln("  Alias: %s", s);
  * }
  * else
@@ -464,20 +430,20 @@ class Protocol
 
     void populate(protoent* proto) @system pure nothrow
     {
-        type = cast(ProtocolType)proto.p_proto;
+        type = cast(ProtocolType) proto.p_proto;
         name = to!string(proto.p_name);
 
         int i;
-        for(i = 0;; i++)
+        for (i = 0;; i++)
         {
-            if(!proto.p_aliases[i])
+            if (!proto.p_aliases[i])
                 break;
         }
 
-        if(i)
+        if (i)
         {
             aliases = new string[i];
-            for(i = 0; i != aliases.length; i++)
+            for (i = 0; i != aliases.length; i++)
             {
                 aliases[i] =
                     to!string(proto.p_aliases[i]);
@@ -494,7 +460,7 @@ class Protocol
     {
         protoent* proto;
         proto = getprotobyname(name.tempCString());
-        if(!proto)
+        if (!proto)
             return false;
         populate(proto);
         return true;
@@ -507,7 +473,7 @@ class Protocol
     {
         protoent* proto;
         proto = getprotobynumber(type);
-        if(!proto)
+        if (!proto)
             return false;
         populate(proto);
         return true;
@@ -515,15 +481,17 @@ class Protocol
 }
 
 
-unittest
+// Skip this test on Android because getprotobyname/number are
+// unimplemented in bionic.
+version(CRuntime_Bionic) {} else
+@safe unittest
 {
-    // getprotobyname,number are unimplemented on Android
     softUnittest({
         Protocol proto = new Protocol;
         assert(proto.getProtocolByType(ProtocolType.TCP));
         //writeln("About protocol TCP:");
         //writefln("\tName: %s", proto.name);
-        // foreach(string s; proto.aliases)
+        // foreach (string s; proto.aliases)
         // {
         //      writefln("\tAlias: %s", s);
         // }
@@ -564,20 +532,20 @@ class Service
     void populate(servent* serv) @system pure nothrow
     {
         name = to!string(serv.s_name);
-        port = ntohs(cast(ushort)serv.s_port);
+        port = ntohs(cast(ushort) serv.s_port);
         protocolName = to!string(serv.s_proto);
 
         int i;
-        for(i = 0;; i++)
+        for (i = 0;; i++)
         {
-            if(!serv.s_aliases[i])
+            if (!serv.s_aliases[i])
                 break;
         }
 
-        if(i)
+        if (i)
         {
             aliases = new string[i];
-            for(i = 0; i != aliases.length; i++)
+            for (i = 0; i != aliases.length; i++)
             {
                 aliases[i] =
                     to!string(serv.s_aliases[i]);
@@ -597,7 +565,7 @@ class Service
     {
         servent* serv;
         serv = getservbyname(name.tempCString(), protocolName.tempCString());
-        if(!serv)
+        if (!serv)
             return false;
         populate(serv);
         return true;
@@ -609,7 +577,7 @@ class Service
     {
         servent* serv;
         serv = getservbyport(port, protocolName.tempCString());
-        if(!serv)
+        if (!serv)
             return false;
         populate(serv);
         return true;
@@ -617,17 +585,17 @@ class Service
 }
 
 
-unittest
+@safe unittest
 {
     softUnittest({
         Service serv = new Service;
-        if(serv.getServiceByName("epmap", "tcp"))
+        if (serv.getServiceByName("epmap", "tcp"))
         {
             // writefln("About service epmap:");
             // writefln("\tService: %s", serv.name);
             // writefln("\tPort: %d", serv.port);
             // writefln("\tProtocol: %s", serv.protocolName);
-            // foreach(string s; serv.aliases)
+            // foreach (string s; serv.aliases)
             // {
             //      writefln("\tAlias: %s", s);
             // }
@@ -644,65 +612,44 @@ unittest
 }
 
 
-/**
- * Class for exceptions thrown from an $(D InternetHost).
- */
-class HostException: SocketOSException
+private mixin template socketOSExceptionCtors()
 {
     ///
-    this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null, int err = _lasterr())
+    this(string msg, string file = __FILE__, size_t line = __LINE__,
+         Throwable next = null, int err = _lasterr())
     {
         super(msg, file, line, next, err);
     }
 
     ///
-    this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__, int err = _lasterr())
+    this(string msg, Throwable next, string file = __FILE__,
+         size_t line = __LINE__, int err = _lasterr())
     {
         super(msg, next, file, line, err);
     }
 
     ///
-    this(string msg, int err, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+    this(string msg, int err, string file = __FILE__, size_t line = __LINE__,
+         Throwable next = null)
     {
         super(msg, next, file, line, err);
     }
 }
 
+
 /**
- * $(D InternetHost) is a class for resolving IPv4 addresses.
+ * Class for exceptions thrown from an `InternetHost`.
+ */
+class HostException: SocketOSException
+{
+    mixin socketOSExceptionCtors;
+}
+
+/**
+ * `InternetHost` is a class for resolving IPv4 addresses.
  *
- * Consider using $(D getAddress), $(D parseAddress) and $(D Address) methods
+ * Consider using `getAddress`, `parseAddress` and `Address` methods
  * instead of using this class directly.
- *
- * Example:
- * ---
- * auto ih = new InternetHost;
- *
- * // Forward lookup
- * writeln("About www.digitalmars.com:");
- * if (ih.getHostByName("www.digitalmars.com"))
- * {
- *     writefln("  Name: %s", ih.name);
- *     auto ip = InternetAddress.addrToString(ih.addrList[0]);
- *     writefln("  IP address: %s", ip);
- *     foreach (string s; ih.aliases)
- *          writefln("  Alias: %s", s);
- *     writeln("---");
- *
- *     // Reverse lookup
- *     writefln("About IP %s:", ip);
- *     if (ih.getHostByAddr(ih.addrList[0]))
- *     {
- *         writefln("  Name: %s", ih.name);
- *         foreach (string s; ih.aliases)
- *              writefln("  Alias: %s", s);
- *     }
- *     else
- *         writeln("  Reverse lookup failed");
- * }
- * else
- *     writeln("  Can't resolve www.digitalmars.com");
- * ---
  */
 class InternetHost
 {
@@ -714,7 +661,7 @@ class InternetHost
 
     void validHostent(in hostent* he)
     {
-        if(he.h_addrtype != cast(int)AddressFamily.INET || he.h_length != 4)
+        if (he.h_addrtype != cast(int) AddressFamily.INET || he.h_length != 4)
             throw new HostException("Address family mismatch");
     }
 
@@ -726,17 +673,17 @@ class InternetHost
 
         name = to!string(he.h_name);
 
-        for(i = 0;; i++)
+        for (i = 0;; i++)
         {
             p = he.h_aliases[i];
-            if(!p)
+            if (!p)
                 break;
         }
 
-        if(i)
+        if (i)
         {
             aliases = new string[i];
-            for(i = 0; i != aliases.length; i++)
+            for (i = 0; i != aliases.length; i++)
             {
                 aliases[i] =
                     to!string(he.h_aliases[i]);
@@ -747,19 +694,19 @@ class InternetHost
             aliases = null;
         }
 
-        for(i = 0;; i++)
+        for (i = 0;; i++)
         {
             p = he.h_addr_list[i];
-            if(!p)
+            if (!p)
                 break;
         }
 
-        if(i)
+        if (i)
         {
             addrList = new uint[i];
-            for(i = 0; i != addrList.length; i++)
+            for (i = 0; i != addrList.length; i++)
             {
-                addrList[i] = ntohl(*(cast(uint*)he.h_addr_list[i]));
+                addrList[i] = ntohl(*(cast(uint*) he.h_addr_list[i]));
             }
         }
         else
@@ -836,7 +783,7 @@ class InternetHost
     {
         return getHost!q{
             auto x = htonl(param);
-            auto he = gethostbyaddr(&x, 4, cast(int)AddressFamily.INET);
+            auto he = gethostbyaddr(&x, 4, cast(int) AddressFamily.INET);
         }(addr);
     }
 
@@ -851,13 +798,13 @@ class InternetHost
             auto x = inet_addr(param.tempCString());
             enforce(x != INADDR_NONE,
                 new SocketParameterException("Invalid IPv4 address"));
-            auto he = gethostbyaddr(&x, 4, cast(int)AddressFamily.INET);
+            auto he = gethostbyaddr(&x, 4, cast(int) AddressFamily.INET);
         }(addr);
     }
 }
 
-
-unittest
+///
+@safe unittest
 {
     InternetHost ih = new InternetHost;
 
@@ -866,29 +813,21 @@ unittest
     ih.getHostByAddr("127.0.0.1");
     assert(ih.addrList[0] == 0x7F_00_00_01);
 
-    softUnittest({
-        if (!ih.getHostByName("www.digitalmars.com"))
-            return;             // don't fail if not connected to internet
-        //writefln("addrList.length = %d", ih.addrList.length);
-        assert(ih.addrList.length);
-        InternetAddress ia = new InternetAddress(ih.addrList[0], InternetAddress.PORT_ANY);
-        assert(ih.name == "www.digitalmars.com" || ih.name == "digitalmars.com",
-               ih.name);
-        // writefln("IP address = %s", ia.toAddrString());
-        // writefln("name = %s", ih.name);
-        // foreach(int i, string s; ih.aliases)
-        // {
-        //      writefln("aliases[%d] = %s", i, s);
-        // }
-        // writefln("---");
+    if (!ih.getHostByName("www.digitalmars.com"))
+        return;             // don't fail if not connected to internet
 
-        //assert(ih.getHostByAddr(ih.addrList[0]));
-        // writefln("name = %s", ih.name);
-        // foreach(int i, string s; ih.aliases)
-        // {
-        //      writefln("aliases[%d] = %s", i, s);
-        // }
-    });
+    assert(ih.addrList.length);
+    InternetAddress ia = new InternetAddress(ih.addrList[0], InternetAddress.PORT_ANY);
+    assert(ih.name == "www.digitalmars.com" || ih.name == "digitalmars.com",
+            ih.name);
+
+    assert(ih.getHostByAddr(ih.addrList[0]));
+    string getHostNameFromInt = ih.name.dup;
+
+    assert(ih.getHostByAddr(ia.toAddrString()));
+    string getHostNameFromStr = ih.name.dup;
+
+    assert(getHostNameFromInt == getHostNameFromStr);
 }
 
 
@@ -902,8 +841,10 @@ struct AddressInfo
     string canonicalName;   /// Canonical name, when $(D AddressInfoFlags.CANONNAME) is used.
 }
 
-// A subset of flags supported on all platforms with getaddrinfo.
-/// Specifies option flags for $(D getAddressInfo).
+/**
+ * A subset of flags supported on all platforms with getaddrinfo.
+ * Specifies option flags for $(D getAddressInfo).
+ */
 enum AddressInfoFlags: int
 {
     /// The resulting addresses will be used in a call to $(D Socket.bind).
@@ -912,14 +853,18 @@ enum AddressInfoFlags: int
     /// The canonical name is returned in $(D canonicalName) member in the first $(D AddressInfo).
     CANONNAME = AI_CANONNAME,
 
-    /// The $(D node) parameter passed to $(D getAddressInfo) must be a numeric string.
-    /// This will suppress any potentially lengthy network host address lookups.
+    /**
+     * The $(D node) parameter passed to $(D getAddressInfo) must be a numeric string.
+     * This will suppress any potentially lengthy network host address lookups.
+     */
     NUMERICHOST = AI_NUMERICHOST,
 }
 
 
-/// On POSIX, getaddrinfo uses its own error codes, and thus has its own
-/// formatting function.
+/**
+ * On POSIX, getaddrinfo uses its own error codes, and thus has its own
+ * formatting function.
+ */
 private string formatGaiError(int err) @trusted
 {
     version(Windows)
@@ -985,7 +930,7 @@ private string formatGaiError(int err) @trusted
  *     AddressFamily.INET6);
  * ---
  */
-AddressInfo[] getAddressInfo(T...)(in char[] node, T options) @trusted
+AddressInfo[] getAddressInfo(T...)(in char[] node, T options)
 {
     const(char)[] service = null;
     addrinfo hints;
@@ -1011,7 +956,23 @@ AddressInfo[] getAddressInfo(T...)(in char[] node, T options) @trusted
             static assert(0, "Unknown getAddressInfo option type: " ~ typeof(option).stringof);
     }
 
-    return getAddressInfoImpl(node, service, &hints);
+    return () @trusted { return getAddressInfoImpl(node, service, &hints); }();
+}
+
+@system unittest
+{
+    struct Oops
+    {
+        const(char[]) breakSafety()
+        {
+            *cast(int*) 0xcafebabe = 0xdeadbeef;
+            return null;
+        }
+        alias breakSafety this;
+    }
+    assert(!__traits(compiles, () {
+        getAddressInfo("", Oops.init);
+    }), "getAddressInfo breaks @safe");
 }
 
 private AddressInfo[] getAddressInfoImpl(in char[] node, in char[] service, addrinfo* hints) @system
@@ -1049,7 +1010,7 @@ private AddressInfo[] getAddressInfoImpl(in char[] node, in char[] service, addr
 }
 
 
-unittest
+@safe unittest
 {
     softUnittest({
         if (getaddrinfoPointer)
@@ -1080,6 +1041,13 @@ unittest
             assert(results.length && results[0].family == AddressFamily.INET6);
         }
     });
+
+    if (getaddrinfoPointer)
+    {
+        auto results = getAddressInfo(null, "1234", AddressInfoFlags.PASSIVE,
+                                      SocketType.STREAM, ProtocolType.TCP, AddressFamily.INET);
+        assert(results.length == 1 && results[0].address.toString() == "0.0.0.0:1234");
+    }
 }
 
 
@@ -1157,7 +1125,7 @@ Address[] getAddress(in char[] hostname, ushort port)
 }
 
 
-unittest
+@safe unittest
 {
     softUnittest({
         auto addresses = getAddress("63.105.9.61");
@@ -1237,7 +1205,7 @@ Address parseAddress(in char[] hostaddr, ushort port)
 }
 
 
-unittest
+@safe unittest
 {
     softUnittest({
         auto address = parseAddress("63.105.9.61");
@@ -1264,23 +1232,7 @@ unittest
  */
 class AddressException: SocketOSException
 {
-    ///
-    this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null, int err = _lasterr())
-    {
-        super(msg, file, line, next, err);
-    }
-
-    ///
-    this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__, int err = _lasterr())
-    {
-        super(msg, next, file, line, err);
-    }
-
-    ///
-    this(string msg, int err, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
-    {
-        super(msg, next, file, line, err);
-    }
+    mixin socketOSExceptionCtors;
 }
 
 
@@ -1324,7 +1276,7 @@ abstract class Address
     }
 
     // Common code for toAddrString and toHostNameString
-    private final string toHostString(bool numeric) @trusted const
+    private string toHostString(bool numeric) @trusted const
     {
         // getnameinfo() is the recommended way to perform a reverse (name)
         // lookup on both Posix and Windows. However, it is only available
@@ -1341,16 +1293,16 @@ abstract class Address
             auto buf = new char[NI_MAXHOST];
             auto ret = getnameinfoPointer(
                         name, nameLen,
-                        buf.ptr, cast(uint)buf.length,
+                        buf.ptr, cast(uint) buf.length,
                         null, 0,
                         numeric ? NI_NUMERICHOST : NI_NAMEREQD);
 
             if (!numeric)
             {
-                if (ret==EAI_NONAME)
+                if (ret == EAI_NONAME)
                     return null;
                 version(Windows)
-                    if (ret==WSANO_DATA)
+                    if (ret == WSANO_DATA)
                         return null;
             }
 
@@ -1364,7 +1316,7 @@ abstract class Address
     }
 
     // Common code for toPortString and toServiceNameString
-    private final string toServiceString(bool numeric) @trusted const
+    private string toServiceString(bool numeric) @trusted const
     {
         // See toHostNameString() for details about getnameinfo().
         if (getnameinfoPointer)
@@ -1373,7 +1325,7 @@ abstract class Address
             enforce(getnameinfoPointer(
                         name, nameLen,
                         null, 0,
-                        buf.ptr, cast(uint)buf.length,
+                        buf.ptr, cast(uint) buf.length,
                         numeric ? NI_NUMERICSERV : NI_NAMEREQD
                     ) == 0, new AddressException("Could not get " ~
                         (numeric ? "port number" : "service name")));
@@ -1502,7 +1454,7 @@ public:
     /// Constructs an $(D Address) with a copy of the specified $(D sockaddr).
     this(const(sockaddr)* sa, socklen_t len) @system pure nothrow
     {
-        this.sa = cast(sockaddr*) (cast(ubyte*)sa)[0..len].dup.ptr;
+        this.sa = cast(sockaddr*) (cast(ubyte*) sa)[0 .. len].dup.ptr;
         this.len = len;
     }
 
@@ -1587,10 +1539,10 @@ public:
     this(in char[] addr, ushort port)
     {
         uint uiaddr = parse(addr);
-        if(ADDR_NONE == uiaddr)
+        if (ADDR_NONE == uiaddr)
         {
             InternetHost ih = new InternetHost;
-            if(!ih.getHostByName(addr))
+            if (!ih.getHostByName(addr))
                 //throw new AddressException("Invalid internet address");
                 throw new AddressException(
                           text("Unable to resolve host '", addr, "'"));
@@ -1620,6 +1572,17 @@ public:
         sin.sin_family = AddressFamily.INET;
         sin.sin_addr.s_addr = ADDR_ANY;
         sin.sin_port = htons(port);
+    }
+
+    /**
+     * Construct a new $(D InternetAddress).
+     * Params:
+     *   addr = A sockaddr_in as obtained from lower-level API calls such as getifaddrs.
+     */
+    this(sockaddr_in addr) pure nothrow @nogc
+    {
+        assert(addr.sin_family == AddressFamily.INET);
+        sin = addr;
     }
 
     /// Human readable string representing the IPv4 address in dotted-decimal form.
@@ -1667,17 +1630,22 @@ public:
      * Compares with another InternetAddress of same type for equality
      * Returns: true if the InternetAddresses share the same address and
      * port number.
-     * Examples:
-     * --------------
-     * InternetAddress addr1,addr2;
-     * if (addr1 == addr2) { }
-     * --------------
      */
     override bool opEquals(Object o) const
     {
-        auto other = cast(InternetAddress)o;
+        auto other = cast(InternetAddress) o;
         return other && this.sin.sin_addr.s_addr == other.sin.sin_addr.s_addr &&
             this.sin.sin_port == other.sin.sin_port;
+    }
+
+    ///
+    @system unittest
+    {
+        auto addr1 = new InternetAddress("127.0.0.1", 80);
+        auto addr2 = new InternetAddress("127.0.0.2", 80);
+
+        assert(addr1 == addr1);
+        assert(addr1 != addr2);
     }
 
     /**
@@ -1704,11 +1672,23 @@ public:
 }
 
 
-unittest
+@safe unittest
 {
     softUnittest({
         const InternetAddress ia = new InternetAddress("63.105.9.61", 80);
         assert(ia.toString() == "63.105.9.61:80");
+    });
+
+    softUnittest({
+        // test construction from a sockaddr_in
+        sockaddr_in sin;
+
+        sin.sin_addr.s_addr = htonl(0x7F_00_00_01);  // 127.0.0.1
+        sin.sin_family = AddressFamily.INET;
+        sin.sin_port = htons(80);
+
+        const InternetAddress ia = new InternetAddress(sin);
+        assert(ia.toString() == "127.0.0.1:80");
     });
 
     softUnittest({
@@ -1830,7 +1810,7 @@ public:
     {
         auto results = getAddressInfo(addr, service, AddressFamily.INET6);
         assert(results.length && results[0].family == AddressFamily.INET6);
-        sin6 = *cast(sockaddr_in6*)results[0].address.name;
+        sin6 = *cast(sockaddr_in6*) results[0].address.name;
     }
 
     /**
@@ -1870,7 +1850,18 @@ public:
         sin6.sin6_port = htons(port);
     }
 
-    /**
+     /**
+     * Construct a new $(D Internet6Address).
+     * Params:
+     *   addr = A sockaddr_in6 as obtained from lower-level API calls such as getifaddrs.
+     */
+    this(sockaddr_in6 addr) pure nothrow @nogc
+    {
+        assert(addr.sin6_family == AddressFamily.INET6);
+        sin6 = addr;
+    }
+
+   /**
      * Parse an IPv6 host address string as described in RFC 2373, and return the
      * address.
      * Throws: $(D SocketException) on error.
@@ -1882,16 +1873,28 @@ public:
         // instead.
         auto results = getAddressInfo(addr, AddressInfoFlags.NUMERICHOST);
         if (results.length && results[0].family == AddressFamily.INET6)
-            return (cast(sockaddr_in6*)results[0].address.name).sin6_addr.s6_addr;
+            return (cast(sockaddr_in6*) results[0].address.name).sin6_addr.s6_addr;
         throw new AddressException("Not an IPv6 address", 0);
     }
 }
 
 
-unittest
+@safe unittest
 {
     softUnittest({
         const Internet6Address ia = new Internet6Address("::1", 80);
+        assert(ia.toString() == "[::1]:80");
+    });
+
+    softUnittest({
+        // test construction from a sockaddr_in6
+        sockaddr_in6 sin;
+
+        sin.sin6_addr.s6_addr = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];  // [::1]
+        sin.sin6_family = AddressFamily.INET6;
+        sin.sin6_port = htons(80);
+
+        const Internet6Address ia = new Internet6Address(sin);
         assert(ia.toString() == "[::1]:80");
     });
 }
@@ -1899,20 +1902,43 @@ unittest
 
 version(StdDdoc)
 {
+    static if (!is(sockaddr_un))
+    {
+        // This exists only to allow the constructor taking
+        // a sockaddr_un to be compilable for documentation
+        // on platforms that don't supply a sockaddr_un.
+        struct sockaddr_un
+        {
+        }
+    }
+
     /**
      * $(D UnixAddress) encapsulates an address for a Unix domain socket
      * ($(D AF_UNIX)). Available only on supported systems.
      */
     class UnixAddress: Address
     {
+        private this() pure nothrow @nogc {}
+
         /// Construct a new $(D UnixAddress) from the specified path.
-        this(in char[] path);
+        this(in char[] path) { }
+
+        /**
+         * Construct a new $(D UnixAddress).
+         * Params:
+         *   addr = A sockaddr_un as obtained from lower-level API calls.
+         */
+        this(sockaddr_un addr) pure nothrow @nogc { }
 
         /// Get the underlying _path.
-        @property string path() const;
+        @property string path() const { return null; }
 
         /// ditto
-        override string toString() const;
+        override string toString() const { return null; }
+
+        override @property sockaddr* name() { return null; }
+        override @property const(sockaddr)* name() const { return null; }
+        override @property socklen_t nameLen() const { return 0; }
     }
 }
 else
@@ -1921,45 +1947,53 @@ static if (is(sockaddr_un))
     class UnixAddress: Address
     {
     protected:
-        sockaddr_un* sun;
-        socklen_t len;
-
+        struct
+        {
+        align (1):
+            sockaddr_un sun;
+            char unused = '\0'; // placeholder for a terminating '\0'
+        }
 
         this() pure nothrow @nogc
         {
+            sun.sun_family = AddressFamily.UNIX;
+            sun.sun_path = '?';
         }
-
 
     public:
         override @property sockaddr* name()
         {
-            return cast(sockaddr*)sun;
+            return cast(sockaddr*)&sun;
         }
 
         override @property const(sockaddr)* name() const
         {
-            return cast(const(sockaddr)*)sun;
+            return cast(const(sockaddr)*)&sun;
         }
 
-
-        override @property socklen_t nameLen() const
+        override @property socklen_t nameLen() @trusted const
         {
-            return len;
+            return cast(socklen_t) (sockaddr_un.init.sun_path.offsetof +
+                strlen(cast(const(char*)) sun.sun_path.ptr) + 1);
         }
 
-
-        this(in char[] path) @trusted pure nothrow
+        this(in char[] path) @trusted pure
         {
-            len = cast(socklen_t)(sockaddr_un.init.sun_path.offsetof + path.length + 1);
-            sun = cast(sockaddr_un*) (new ubyte[len]).ptr;
-            sun.sun_family = AF_UNIX;
-            sun.sun_path.ptr[0..path.length] = (cast(byte[]) path)[];
+            enforce(path.length <= sun.sun_path.sizeof, new SocketParameterException("Path too long"));
+            sun.sun_family = AddressFamily.UNIX;
+            sun.sun_path.ptr[0 .. path.length] = (cast(byte[]) path)[];
             sun.sun_path.ptr[path.length] = 0;
         }
 
-        @property string path() const pure
+        this(sockaddr_un addr) pure nothrow @nogc
         {
-            return to!string(sun.sun_path.ptr);
+            assert(addr.sun_family == AddressFamily.UNIX);
+            sun = addr;
+        }
+
+        @property string path() @trusted const pure
+        {
+            return to!string(cast(const(char)*)sun.sun_path.ptr);
         }
 
         override string toString() const pure
@@ -1968,15 +2002,15 @@ static if (is(sockaddr_un))
         }
     }
 
-    unittest
+    @safe unittest
     {
         import core.stdc.stdio : remove;
-        import std.file: deleteme;
+        import std.file : deleteme;
 
         immutable ubyte[] data = [1, 2, 3, 4];
         Socket[2] pair;
 
-        auto name = std.file.deleteme ~ "-unix-socket";
+        auto name = deleteme ~ "-unix-socket";
         auto address = new UnixAddress(name);
 
         auto listener = new Socket(AddressFamily.UNIX, SocketType.STREAM);
@@ -1984,6 +2018,7 @@ static if (is(sockaddr_un))
 
         listener.bind(address);
         scope(exit) () @trusted { remove(name.tempCString()); } ();
+        assert(listener.localAddress.toString == name);
 
         listener.listen(1);
 
@@ -2010,23 +2045,7 @@ static if (is(sockaddr_un))
  */
 class SocketAcceptException: SocketOSException
 {
-    ///
-    this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null, int err = _lasterr())
-    {
-        super(msg, file, line, next, err);
-    }
-
-    ///
-    this(string msg, Throwable next, string file = __FILE__, size_t line = __LINE__, int err = _lasterr())
-    {
-        super(msg, next, file, line, err);
-    }
-
-    ///
-    this(string msg, int err, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
-    {
-        super(msg, next, file, line, err);
-    }
+    mixin socketOSExceptionCtors;
 }
 
 /// How a socket is shutdown:
@@ -2117,25 +2136,25 @@ private:
 
         fd_set_type[] set;
 
-        final void resize(size_t size) pure nothrow
+        void resize(size_t size) pure nothrow
         {
             set.length = FD_SET_OFFSET + size;
         }
 
-        final ref inout(fd_set_count_type) count() @trusted @property inout pure nothrow @nogc
+        ref inout(fd_set_count_type) count() @trusted @property inout pure nothrow @nogc
         {
             assert(set.length);
             return *cast(inout(fd_set_count_type)*)set.ptr;
         }
 
-        final size_t capacity() @property const pure nothrow @nogc
+        size_t capacity() @property const pure nothrow @nogc
         {
             return set.length - FD_SET_OFFSET;
         }
 
-        final inout(socket_t)[] fds() @trusted inout @property pure nothrow @nogc
+        inout(socket_t)[] fds() @trusted inout @property pure nothrow @nogc
         {
-            return cast(inout(socket_t)[])set[FD_SET_OFFSET..FD_SET_OFFSET+count];
+            return cast(inout(socket_t)[])set[FD_SET_OFFSET .. FD_SET_OFFSET+count];
         }
     }
     else
@@ -2145,7 +2164,7 @@ private:
         // type (declared in core.sys.posix.sys.select) is a structure
         // containing a single field, a static array.
 
-        static assert(fd_set.tupleof.length==1);
+        static assert(fd_set.tupleof.length == 1);
 
         // This is the type used in the fd_set array.
         // Using the type of the correct size is important for big-endian
@@ -2159,7 +2178,7 @@ private:
 
         static fd_set_type mask(uint n) pure nothrow @nogc
         {
-            return (cast(fd_set_type)1) << (n % FD_NFDBITS);
+            return (cast(fd_set_type) 1) << (n % FD_NFDBITS);
         }
 
         // Array size to fit that many sockets
@@ -2171,21 +2190,21 @@ private:
 
         fd_set_type[] set;
 
-        final void resize(size_t size) pure nothrow
+        void resize(size_t size) pure nothrow
         {
             set.length = lengthFor(size);
         }
 
         // Make sure we can fit that many sockets
 
-        final void setMinCapacity(size_t size) pure nothrow
+        void setMinCapacity(size_t size) pure nothrow
         {
             auto length = lengthFor(size);
             if (set.length < length)
                 set.length = length;
         }
 
-        final size_t capacity() @property const pure nothrow @nogc
+        size_t capacity() @property const pure nothrow @nogc
         {
             return set.length * FD_NFDBITS;
         }
@@ -2229,7 +2248,8 @@ public:
                 set.length *= 2;
                 set.length = set.capacity;
             }
-            fds[count++] = s;
+            ++count;
+            fds[$-1] = s;
         }
         else
         {
@@ -2248,8 +2268,10 @@ public:
         }
     }
 
-    /// Add a $(D Socket) to the collection.
-    /// The socket must not already be in the collection.
+    /**
+     * Add a $(D Socket) to the collection.
+     * The socket must not already be in the collection.
+     */
     void add(Socket s) pure nothrow
     {
         add(s.sock);
@@ -2259,7 +2281,7 @@ public:
     {
         version (Windows)
         {
-            import std.algorithm : countUntil;
+            import std.algorithm.searching : countUntil;
             auto fds = fds;
             auto p = fds.countUntil(s);
             if (p >= 0)
@@ -2276,8 +2298,10 @@ public:
     }
 
 
-    /// Remove this $(D Socket) from the collection.
-    /// Does nothing if the socket is not in the collection already.
+    /**
+     * Remove this $(D Socket) from the collection.
+     * Does nothing if the socket is not in the collection already.
+     */
     void remove(Socket s) pure nothrow
     {
         remove(s.sock);
@@ -2287,7 +2311,7 @@ public:
     {
         version (Windows)
         {
-            import std.algorithm;
+            import std.algorithm.searching : canFind;
             return fds.canFind(s) ? 1 : 0;
         }
         else
@@ -2307,20 +2331,25 @@ public:
     }
 
 
-    /// Return the current capacity of this $(D SocketSet). The exact
-    /// meaning of the return value varies from platform to platform.
-    /// Note that since D 2.065, this value does not indicate a
-    /// restriction, and $(D SocketSet) will grow its capacity as
-    /// needed automatically.
+    /**
+     * Returns:
+     * The current capacity of this $(D SocketSet). The exact
+     * meaning of the return value varies from platform to platform.
+     *
+     * Note:
+     * Since D 2.065, this value does not indicate a
+     * restriction, and $(D SocketSet) will grow its capacity as
+     * needed automatically.
+     */
     @property uint max() const pure nothrow @nogc
     {
-        return cast(uint)capacity;
+        return cast(uint) capacity;
     }
 
 
     fd_set* toFd_set() @trusted pure nothrow @nogc
     {
-        return cast(fd_set*)set.ptr;
+        return cast(fd_set*) set.ptr;
     }
 
 
@@ -2337,10 +2366,10 @@ public:
     }
 }
 
-unittest
+@safe unittest
 {
     auto fds = cast(socket_t[])
-        [cast(socket_t)1, 2, 0, 1024, 17, 42, 1234, 77, 77+32, 77+64];
+        [cast(socket_t) 1, 2, 0, 1024, 17, 42, 1234, 77, 77+32, 77+64];
     auto set = new SocketSet();
     foreach (fd; fds) assert(!set.isSet(fd));
     foreach (fd; fds) set.add(fd);
@@ -2349,7 +2378,7 @@ unittest
     // Make sure SocketSet reimplements fd_set correctly
     auto fdset = set.toFd_set();
     foreach (fd; fds[0]..cast(socket_t)(fds[$-1]+1))
-        assert(cast(bool)set.isSet(fd) == cast(bool)(() @trusted => FD_ISSET(fd, fdset))());
+        assert(cast(bool) set.isSet(fd) == cast(bool)(() @trusted => FD_ISSET(fd, fdset))());
 
     foreach (fd; fds)
     {
@@ -2359,7 +2388,7 @@ unittest
     }
 }
 
-unittest
+@safe unittest
 {
     softUnittest({
         enum PAIRS = 768;
@@ -2434,51 +2463,31 @@ unittest
     });
 }
 
-unittest // Issue 14012, 14013
+@safe unittest // Issue 14012, 14013
 {
     auto set = new SocketSet(1);
     assert(set.max >= 0);
 
     enum LIMIT = 4096;
-    foreach (n; 0..LIMIT)
-        set.add(cast(socket_t)n);
+    foreach (n; 0 .. LIMIT)
+        set.add(cast(socket_t) n);
     assert(set.max >= LIMIT);
 }
 
 /// The level at which a socket option is defined:
-version(Android)
+enum SocketOptionLevel: int
 {
-    // no GGP on Android
-    enum SocketOptionLevel: int
-    {
-        SOCKET =  SOL_SOCKET,               /// Socket level
-        IP =      ProtocolType.IP,          /// Internet Protocol version 4 level
-        ICMP =    ProtocolType.ICMP,        /// Internet Control Message Protocol level
-        IGMP =    ProtocolType.IGMP,        /// Internet Group Management Protocol level
-        TCP =     ProtocolType.TCP,         /// Transmission Control Protocol level
-        PUP =     ProtocolType.PUP,         /// PARC Universal Packet Protocol level
-        UDP =     ProtocolType.UDP,         /// User Datagram Protocol level
-        IDP =     ProtocolType.IDP,         /// Xerox NS protocol level
-        RAW =     ProtocolType.RAW,         /// Raw IP packet level
-        IPV6 =    ProtocolType.IPV6,        /// Internet Protocol version 6 level
-    }
-}
-else
-{
-    enum SocketOptionLevel: int
-    {
-        SOCKET =  SOL_SOCKET,               /// Socket level
-        IP =      ProtocolType.IP,          /// Internet Protocol version 4 level
-        ICMP =    ProtocolType.ICMP,        /// Internet Control Message Protocol level
-        IGMP =    ProtocolType.IGMP,        /// Internet Group Management Protocol level
-        GGP =     ProtocolType.GGP,         /// Gateway to Gateway Protocol level
-        TCP =     ProtocolType.TCP,         /// Transmission Control Protocol level
-        PUP =     ProtocolType.PUP,         /// PARC Universal Packet Protocol level
-        UDP =     ProtocolType.UDP,         /// User Datagram Protocol level
-        IDP =     ProtocolType.IDP,         /// Xerox NS protocol level
-        RAW =     ProtocolType.RAW,         /// Raw IP packet level
-        IPV6 =    ProtocolType.IPV6,        /// Internet Protocol version 6 level
-    }
+    SOCKET =  SOL_SOCKET,               /// Socket level
+    IP =      ProtocolType.IP,          /// Internet Protocol version 4 level
+    ICMP =    ProtocolType.ICMP,        /// Internet Control Message Protocol level
+    IGMP =    ProtocolType.IGMP,        /// Internet Group Management Protocol level
+    GGP =     ProtocolType.GGP,         /// Gateway to Gateway Protocol level
+    TCP =     ProtocolType.TCP,         /// Transmission Control Protocol level
+    PUP =     ProtocolType.PUP,         /// PARC Universal Packet Protocol level
+    UDP =     ProtocolType.UDP,         /// User Datagram Protocol level
+    IDP =     ProtocolType.IDP,         /// Xerox NS protocol level
+    RAW =     ProtocolType.RAW,         /// Raw IP packet level
+    IPV6 =    ProtocolType.IPV6,        /// Internet Protocol version 6 level
 }
 
 /// _Linger information for use with SocketOption.LINGER.
@@ -2555,11 +2564,12 @@ private:
     // behavior.
     enum WINSOCK_TIMEOUT_SKEW = 500;
 
-    unittest
+    @safe unittest
     {
         version(SlowTests)
         softUnittest({
             import std.datetime;
+            import std.typecons;
 
             enum msecs = 1000;
             auto pair = socketPair();
@@ -2567,7 +2577,7 @@ private:
             sock.setOption(SocketOptionLevel.SOCKET,
                 SocketOption.RCVTIMEO, dur!"msecs"(msecs));
 
-            auto sw = StopWatch(AutoStart.yes);
+            auto sw = StopWatch(Yes.autoStart);
             ubyte[1] buf;
             sock.receive(buf);
             sw.stop();
@@ -2589,7 +2599,7 @@ private:
         // has it (e.g. on OS X).
         static if (is(typeof(SO_NOSIGPIPE)))
         {
-            setOption(SocketOptionLevel.SOCKET, cast(SocketOption)SO_NOSIGPIPE, true);
+            setOption(SocketOptionLevel.SOCKET, cast(SocketOption) SO_NOSIGPIPE, true);
         }
     }
 
@@ -2611,18 +2621,18 @@ public:
     {
         _family = af;
         auto handle = cast(socket_t) socket(af, type, protocol);
-        if(handle == socket_t.init)
+        if (handle == socket_t.init)
             throw new SocketOSException("Unable to create socket");
         setSock(handle);
     }
 
-
-    // A single protocol exists to support this socket type within the
-    // protocol family, so the ProtocolType is assumed.
     /// ditto
     this(AddressFamily af, SocketType type)
     {
-        this(af, type, cast(ProtocolType)0);         // Pseudo protocol number.
+        /* A single protocol exists to support this socket type within the
+         * protocol family, so the ProtocolType is assumed.
+         */
+        this(af, type, cast(ProtocolType) 0);         // Pseudo protocol number.
     }
 
 
@@ -2631,9 +2641,9 @@ public:
     {
         protoent* proto;
         proto = getprotobyname(protocolName.tempCString());
-        if(!proto)
+        if (!proto)
             throw new SocketOSException("Unable to find the protocol");
-        this(af, type, cast(ProtocolType)proto.p_proto);
+        this(af, type, cast(ProtocolType) proto.p_proto);
     }
 
 
@@ -2692,20 +2702,20 @@ public:
         version(Windows)
         {
             uint num = !byes;
-            if(_SOCKET_ERROR == ioctlsocket(sock, FIONBIO, &num))
+            if (_SOCKET_ERROR == ioctlsocket(sock, FIONBIO, &num))
                 goto err;
             _blocking = byes;
         }
         else version(Posix)
         {
             int x = fcntl(sock, F_GETFL, 0);
-            if(-1 == x)
+            if (-1 == x)
                 goto err;
-            if(byes)
+            if (byes)
                 x &= ~O_NONBLOCK;
             else
                 x |= O_NONBLOCK;
-            if(-1 == fcntl(sock, F_SETFL, x))
+            if (-1 == fcntl(sock, F_SETFL, x))
                 goto err;
         }
         return;         // Success.
@@ -2732,7 +2742,7 @@ public:
     /// Associate a local address with this socket.
     void bind(Address addr) @trusted
     {
-        if(_SOCKET_ERROR == .bind(sock, addr.name, addr.nameLen))
+        if (_SOCKET_ERROR == .bind(sock, addr.name, addr.nameLen))
             throw new SocketOSException("Unable to bind socket");
     }
 
@@ -2743,21 +2753,21 @@ public:
      */
     void connect(Address to) @trusted
     {
-        if(_SOCKET_ERROR == .connect(sock, to.name, to.nameLen))
+        if (_SOCKET_ERROR == .connect(sock, to.name, to.nameLen))
         {
             int err;
             err = _lasterr();
 
-            if(!blocking)
+            if (!blocking)
             {
                 version(Windows)
                 {
-                    if(WSAEWOULDBLOCK == err)
+                    if (WSAEWOULDBLOCK == err)
                         return;
                 }
                 else version(Posix)
                 {
-                    if(EINPROGRESS == err)
+                    if (EINPROGRESS == err)
                         return;
                 }
                 else
@@ -2776,7 +2786,7 @@ public:
      */
     void listen(int backlog) @trusted
     {
-        if(_SOCKET_ERROR == .listen(sock, backlog))
+        if (_SOCKET_ERROR == .listen(sock, backlog))
             throw new SocketOSException("Unable to listen on socket");
     }
 
@@ -2786,9 +2796,10 @@ public:
      * instance of your class. The returned $(D Socket)'s handle must not be
      * set; $(D Socket) has a protected constructor $(D this()) to use in this
      * situation.
+     *
+     * Override to use a derived class.
+     * The returned socket's handle must not be set.
      */
-    // Override to use a derived class.
-    // The returned socket's handle must not be set.
     protected Socket accepting() pure nothrow
     {
         return new Socket;
@@ -2802,7 +2813,7 @@ public:
     Socket accept() @trusted
     {
         auto newsock = cast(socket_t).accept(sock, null, null);
-        if(socket_t.init == newsock)
+        if (socket_t.init == newsock)
             throw new SocketAcceptException("Unable to accept socket connection");
 
         Socket newSocket;
@@ -2816,7 +2827,7 @@ public:
                 newSocket._blocking = _blocking;                 //inherits blocking mode
             newSocket._family = _family;             //same family
         }
-        catch(Throwable o)
+        catch (Throwable o)
         {
             _close(newsock);
             throw o;
@@ -2828,7 +2839,7 @@ public:
     /// Disables sends and/or receives.
     void shutdown(SocketShutdown how) @trusted nothrow @nogc
     {
-        .shutdown(sock, cast(int)how);
+        .shutdown(sock, cast(int) how);
     }
 
 
@@ -2850,9 +2861,9 @@ public:
      * Calling $(D shutdown) before $(D close) is recommended for
      * connection-oriented sockets. The $(D Socket) object is no longer
      * usable after $(D close).
+     * Calling shutdown() before this is recommended
+     * for connection-oriented sockets.
      */
-    //calling shutdown() before this is recommended
-    //for connection-oriented sockets
     void close() @trusted nothrow @nogc
     {
         _close(sock);
@@ -2860,12 +2871,13 @@ public:
     }
 
 
-    /// Returns the local machine's host name.
-    // Idea from mango.
+    /**
+     * Returns: the local machine's host name
+     */
     static @property string hostName() @trusted     // getter
     {
         char[256] result;         // Host names are limited to 255 chars.
-        if(_SOCKET_ERROR == .gethostname(result.ptr, result.length))
+        if (_SOCKET_ERROR == .gethostname(result.ptr, result.length))
             throw new SocketOSException("Unable to obtain host name");
         return to!string(result.ptr);
     }
@@ -2875,9 +2887,9 @@ public:
     {
         Address addr = createAddress();
         socklen_t nameLen = addr.nameLen;
-        if(_SOCKET_ERROR == .getpeername(sock, addr.name, &nameLen))
+        if (_SOCKET_ERROR == .getpeername(sock, addr.name, &nameLen))
             throw new SocketOSException("Unable to obtain remote socket address");
-        if(nameLen > addr.nameLen)
+        if (nameLen > addr.nameLen)
             throw new SocketParameterException("Not enough socket address storage");
         assert(addr.addressFamily == _family);
         return addr;
@@ -2888,9 +2900,9 @@ public:
     {
         Address addr = createAddress();
         socklen_t nameLen = addr.nameLen;
-        if(_SOCKET_ERROR == .getsockname(sock, addr.name, &nameLen))
+        if (_SOCKET_ERROR == .getsockname(sock, addr.name, &nameLen))
             throw new SocketOSException("Unable to obtain local socket address");
-        if(nameLen > addr.nameLen)
+        if (nameLen > addr.nameLen)
             throw new SocketParameterException("Not enough socket address storage");
         assert(addr.addressFamily == _family);
         return addr;
@@ -2903,13 +2915,21 @@ public:
      */
     enum int ERROR = _SOCKET_ERROR;
 
+    private static int capToInt(size_t size) nothrow @nogc
+    {
+        // Windows uses int instead of size_t for length arguments.
+        // Luckily, the send/recv functions make no guarantee that
+        // all the data is sent, so we use that to send at most
+        // int.max bytes.
+        return size > size_t(int.max) ? int.max : cast(int) size;
+    }
+
     /**
      * Send data on the connection. If the socket is blocking and there is no
      * buffer space left, $(D send) waits.
      * Returns: The number of bytes actually sent, or $(D Socket.ERROR) on
      * failure.
      */
-    //returns number of bytes actually sent, or -1 on error
     ptrdiff_t send(const(void)[] buf, SocketFlags flags) @trusted
     {
         static if (is(typeof(MSG_NOSIGNAL)))
@@ -2917,9 +2937,9 @@ public:
             flags = cast(SocketFlags)(flags | MSG_NOSIGNAL);
         }
         version( Windows )
-            auto sent = .send(sock, buf.ptr, to!int(buf.length), cast(int)flags);
+            auto sent = .send(sock, buf.ptr, capToInt(buf.length), cast(int) flags);
         else
-            auto sent = .send(sock, buf.ptr, buf.length, cast(int)flags);
+            auto sent = .send(sock, buf.ptr, buf.length, cast(int) flags);
         return sent;
     }
 
@@ -2944,11 +2964,11 @@ public:
         }
         version( Windows )
             return .sendto(
-                       sock, buf.ptr, std.conv.to!int(buf.length),
-                       cast(int)flags, to.name, to.nameLen
+                       sock, buf.ptr, capToInt(buf.length),
+                       cast(int) flags, to.name, to.nameLen
                        );
         else
-            return .sendto(sock, buf.ptr, buf.length, cast(int)flags, to.name, to.nameLen);
+            return .sendto(sock, buf.ptr, buf.length, cast(int) flags, to.name, to.nameLen);
     }
 
     /// ditto
@@ -2967,9 +2987,9 @@ public:
             flags = cast(SocketFlags)(flags | MSG_NOSIGNAL);
         }
         version(Windows)
-            return .sendto(sock, buf.ptr, to!int(buf.length), cast(int)flags, null, 0);
+            return .sendto(sock, buf.ptr, capToInt(buf.length), cast(int) flags, null, 0);
         else
-            return .sendto(sock, buf.ptr, buf.length, cast(int)flags, null, 0);
+            return .sendto(sock, buf.ptr, buf.length, cast(int) flags, null, 0);
     }
 
 
@@ -2987,17 +3007,18 @@ public:
      * Returns: The number of bytes actually received, $(D 0) if the remote side
      * has closed the connection, or $(D Socket.ERROR) on failure.
      */
-    //returns number of bytes actually received, 0 on connection closure, or -1 on error
     ptrdiff_t receive(void[] buf, SocketFlags flags) @trusted
     {
         version(Windows)         // Does not use size_t
         {
             return buf.length
-                   ? .recv(sock, buf.ptr, to!int(buf.length), cast(int)flags)
+                   ? .recv(sock, buf.ptr, capToInt(buf.length), cast(int) flags)
                    : 0;
-        } else {
+        }
+        else
+        {
             return buf.length
-                   ? .recv(sock, buf.ptr, buf.length, cast(int)flags)
+                   ? .recv(sock, buf.ptr, buf.length, cast(int) flags)
                    : 0;
         }
     }
@@ -3017,21 +3038,23 @@ public:
      */
     ptrdiff_t receiveFrom(void[] buf, SocketFlags flags, ref Address from) @trusted
     {
-        if(!buf.length)         //return 0 and don't think the connection closed
+        if (!buf.length)         //return 0 and don't think the connection closed
             return 0;
         if (from is null || from.addressFamily != _family)
             from = createAddress();
         socklen_t nameLen = from.nameLen;
         version(Windows)
         {
-            auto read = .recvfrom(sock, buf.ptr, to!int(buf.length), cast(int)flags, from.name, &nameLen);
+            auto read = .recvfrom(sock, buf.ptr, capToInt(buf.length), cast(int) flags, from.name, &nameLen);
             assert(from.addressFamily == _family);
-            // if(!read) //connection closed
+            // if (!read) //connection closed
             return read;
-        } else {
-            auto read = .recvfrom(sock, buf.ptr, buf.length, cast(int)flags, from.name, &nameLen);
+        }
+        else
+        {
+            auto read = .recvfrom(sock, buf.ptr, buf.length, cast(int) flags, from.name, &nameLen);
             assert(from.addressFamily == _family);
-            // if(!read) //connection closed
+            // if (!read) //connection closed
             return read;
         }
     }
@@ -3048,16 +3071,18 @@ public:
     /// ditto
     ptrdiff_t receiveFrom(void[] buf, SocketFlags flags) @trusted
     {
-        if(!buf.length)         //return 0 and don't think the connection closed
+        if (!buf.length)         //return 0 and don't think the connection closed
             return 0;
         version(Windows)
         {
-            auto read = .recvfrom(sock, buf.ptr, to!int(buf.length), cast(int)flags, null, null);
-            // if(!read) //connection closed
+            auto read = .recvfrom(sock, buf.ptr, capToInt(buf.length), cast(int) flags, null, null);
+            // if (!read) //connection closed
             return read;
-        } else {
-            auto read = .recvfrom(sock, buf.ptr, buf.length, cast(int)flags, null, null);
-            // if(!read) //connection closed
+        }
+        else
+        {
+            auto read = .recvfrom(sock, buf.ptr, buf.length, cast(int) flags, null, null);
+            // if (!read) //connection closed
             return read;
         }
     }
@@ -3071,13 +3096,15 @@ public:
     }
 
 
-    /// Get a socket option.
-    /// Returns: The number of bytes written to $(D result).
-    //returns the length, in bytes, of the actual result - very different from getsockopt()
+    /**
+     * Get a socket option.
+     * Returns: The number of bytes written to $(D result).
+     * The length, in bytes, of the actual result - very different from getsockopt()
+     */
     int getOption(SocketOptionLevel level, SocketOption option, void[] result) @trusted
     {
         socklen_t len = cast(socklen_t) result.length;
-        if(_SOCKET_ERROR == .getsockopt(sock, cast(int)level, cast(int)option, result.ptr, &len))
+        if (_SOCKET_ERROR == .getsockopt(sock, cast(int) level, cast(int) option, result.ptr, &len))
             throw new SocketOSException("Unable to get socket option");
         return len;
     }
@@ -3093,7 +3120,7 @@ public:
     /// Get the linger option.
     int getOption(SocketOptionLevel level, SocketOption option, out Linger result) @trusted
     {
-        //return getOption(cast(SocketOptionLevel)SocketOptionLevel.SOCKET, SocketOption.LINGER, (&result)[0 .. 1]);
+        //return getOption(cast(SocketOptionLevel) SocketOptionLevel.SOCKET, SocketOption.LINGER, (&result)[0 .. 1]);
         return getOption(level, option, (&result.clinger)[0 .. 1]);
     }
 
@@ -3115,7 +3142,7 @@ public:
         else version (Posix)
         {
             TimeVal tv;
-            getOption(level, option, (&tv.ctimeval)[0..1]);
+            getOption(level, option, (&tv.ctimeval)[0 .. 1]);
             result = dur!"seconds"(tv.seconds) + dur!"usecs"(tv.microseconds);
         }
         else static assert(false);
@@ -3124,8 +3151,8 @@ public:
     /// Set a socket option.
     void setOption(SocketOptionLevel level, SocketOption option, void[] value) @trusted
     {
-        if(_SOCKET_ERROR == .setsockopt(sock, cast(int)level,
-                                        cast(int)option, value.ptr, cast(uint) value.length))
+        if (_SOCKET_ERROR == .setsockopt(sock, cast(int) level,
+                                        cast(int) option, value.ptr, cast(uint) value.length))
             throw new SocketOSException("Unable to set socket option");
     }
 
@@ -3140,7 +3167,7 @@ public:
     /// Set the linger option.
     void setOption(SocketOptionLevel level, SocketOption option, Linger value) @trusted
     {
-        //setOption(cast(SocketOptionLevel)SocketOptionLevel.SOCKET, SocketOption.LINGER, (&value)[0 .. 1]);
+        //setOption(cast(SocketOptionLevel) SocketOptionLevel.SOCKET, SocketOption.LINGER, (&value)[0 .. 1]);
         setOption(level, option, (&value.clinger)[0 .. 1]);
     }
 
@@ -3170,6 +3197,7 @@ public:
      * Example:
      * ---
      * import std.datetime;
+     * import std.typecons;
      * auto pair = socketPair();
      * scope(exit) foreach (s; pair) s.close();
      *
@@ -3178,7 +3206,7 @@ public:
      * pair[0].setOption(SocketOptionLevel.SOCKET,
      *     SocketOption.RCVTIMEO, dur!"seconds"(1));
      *
-     * auto sw = StopWatch(AutoStart.yes);
+     * auto sw = StopWatch(Yes.autoStart);
      * ubyte[1] buffer;
      * pair[0].receive(buffer);
      * writefln("Waited %s ms until the socket timed out.",
@@ -3195,6 +3223,8 @@ public:
 
         version (Windows)
         {
+            import std.algorithm.comparison : max;
+
             auto msecs = to!int(value.total!"msecs");
             if (msecs != 0 && option == SocketOption.RCVTIMEO)
                 msecs = max(1, msecs - WINSOCK_TIMEOUT_SKEW);
@@ -3209,8 +3239,10 @@ public:
         else static assert(false);
     }
 
-    /// Get a text description of this socket's error status, and clear the
-    /// socket's error status.
+    /**
+     * Get a text description of this socket's error status, and clear the
+     * socket's error status.
+     */
     string getErrorText()
     {
         int32_t error;
@@ -3249,8 +3281,8 @@ public:
         else
         static if (is(typeof(TCP_KEEPIDLE)) && is(typeof(TCP_KEEPINTVL)))
         {
-            setOption(SocketOptionLevel.TCP, cast(SocketOption)TCP_KEEPIDLE, time);
-            setOption(SocketOptionLevel.TCP, cast(SocketOption)TCP_KEEPINTVL, interval);
+            setOption(SocketOptionLevel.TCP, cast(SocketOption) TCP_KEEPIDLE, time);
+            setOption(SocketOptionLevel.TCP, cast(SocketOption) TCP_KEEPINTVL, interval);
             setOption(SocketOptionLevel.SOCKET, SocketOption.KEEPALIVE, true);
         }
         else
@@ -3270,18 +3302,21 @@ public:
      * connection is established and it's able to send. For a listening socket,
      * a read status change means there is an incoming connection request and
      * it's able to accept.
+     *
+     * `SocketSet`'s updated to include only those sockets which an event occured.
+     * For a `connect()`ing socket, writeability means connected.
+     * For a `listen()`ing socket, readability means listening
+     * `Winsock`; possibly internally limited to 64 sockets per set.
+     *
+     * Returns:
+     * the number of events, 0 on timeout, or -1 on interruption
      */
-    //SocketSet's updated to include only those sockets which an event occured
-    //returns the number of events, 0 on timeout, or -1 on interruption
-    //for a connect()ing socket, writeability means connected
-    //for a listen()ing socket, readability means listening
-    //Winsock: possibly internally limited to 64 sockets per set
     static int select(SocketSet checkRead, SocketSet checkWrite, SocketSet checkError, Duration timeout) @trusted
     {
         auto vals = timeout.split!("seconds", "usecs")();
         TimeVal tv;
-        tv.seconds      = cast(tv.tv_sec_t )vals.seconds;
-        tv.microseconds = cast(tv.tv_usec_t)vals.usecs;
+        tv.seconds      = cast(tv.tv_sec_t ) vals.seconds;
+        tv.microseconds = cast(tv.tv_usec_t) vals.usecs;
         return select(checkRead, checkWrite, checkError, &tv);
     }
 
@@ -3297,12 +3332,12 @@ public:
     in
     {
         //make sure none of the SocketSet's are the same object
-        if(checkRead)
+        if (checkRead)
         {
             assert(checkRead !is checkWrite);
             assert(checkRead !is checkError);
         }
-        if(checkWrite)
+        if (checkWrite)
         {
             assert(checkWrite !is checkError);
         }
@@ -3321,7 +3356,7 @@ public:
         }
         else
         {
-            if(checkRead)
+            if (checkRead)
             {
                 fr = checkRead.toFd_set();
                 n = checkRead.selectn();
@@ -3331,12 +3366,12 @@ public:
                 fr = null;
             }
 
-            if(checkWrite)
+            if (checkWrite)
             {
                 fw = checkWrite.toFd_set();
                 int _n;
                 _n = checkWrite.selectn();
-                if(_n > n)
+                if (_n > n)
                     n = _n;
             }
             else
@@ -3344,12 +3379,12 @@ public:
                 fw = null;
             }
 
-            if(checkError)
+            if (checkError)
             {
                 fe = checkError.toFd_set();
                 int _n;
                 _n = checkError.selectn();
-                if(_n > n)
+                if (_n > n)
                     n = _n;
             }
             else
@@ -3368,12 +3403,12 @@ public:
 
         version(Windows)
         {
-            if(_SOCKET_ERROR == result && WSAGetLastError() == WSAEINTR)
+            if (_SOCKET_ERROR == result && WSAGetLastError() == WSAEINTR)
                 return -1;
         }
         else version(Posix)
         {
-            if(_SOCKET_ERROR == result && errno == EINTR)
+            if (_SOCKET_ERROR == result && errno == EINTR)
                 return -1;
         }
         else
@@ -3381,30 +3416,29 @@ public:
             static assert(0);
         }
 
-        if(_SOCKET_ERROR == result)
+        if (_SOCKET_ERROR == result)
             throw new SocketOSException("Socket select error");
 
         return result;
     }
 
-    // Explicitly undocumented. It will be removed in December 2014.
-    deprecated("Please use the overload of select which takes a Duration instead.")
-    static int select(SocketSet checkRead, SocketSet checkWrite, SocketSet checkError, long microseconds) @trusted
-    {
-        TimeVal tv;
-        tv.seconds      = to!(tv.tv_sec_t )(microseconds / 1_000_000);
-        tv.microseconds = to!(tv.tv_usec_t)(microseconds % 1_000_000);
-        return select(checkRead, checkWrite, checkError, &tv);
-    }
 
-
-    /// Returns a new Address object for the current address family.
-    /// Can be overridden to support other addresses.
+    /**
+     * Can be overridden to support other addresses.
+     * Returns: a new `Address` object for the current address family.
+     */
     protected Address createAddress() pure nothrow
     {
         Address result;
-        switch(_family)
+        switch (_family)
         {
+        static if (is(sockaddr_un))
+        {
+            case AddressFamily.UNIX:
+                result = new UnixAddress;
+                break;
+        }
+
         case AddressFamily.INET:
             result = new InternetAddress;
             break;
@@ -3465,25 +3499,60 @@ class UdpSocket: Socket
     }
 }
 
+// Issue 16514
+@safe unittest
+{
+    class TestSocket : Socket
+    {
+        override
+        {
+            const pure nothrow @nogc @property @safe socket_t handle() { assert(0); }
+            const nothrow @nogc @property @trusted bool blocking() { assert(0); }
+            @property @trusted void blocking(bool byes) { assert(0); }
+            @property @safe AddressFamily addressFamily() { assert(0); }
+            const @property @trusted bool isAlive() { assert(0); }
+            @trusted void bind(Address addr) { assert(0); }
+            @trusted void connect(Address to) { assert(0); }
+            @trusted void listen(int backlog) { assert(0); }
+            protected pure nothrow @safe Socket accepting() { assert(0); }
+            @trusted Socket accept() { assert(0); }
+            nothrow @nogc @trusted void shutdown(SocketShutdown how) { assert(0); }
+            nothrow @nogc @trusted void close() { assert(0); }
+            @property @trusted Address remoteAddress() { assert(0); }
+            @property @trusted Address localAddress() { assert(0); }
+            @trusted ptrdiff_t send(const(void)[] buf, SocketFlags flags) { assert(0); }
+            @safe ptrdiff_t send(const(void)[] buf) { assert(0); }
+            @trusted ptrdiff_t sendTo(const(void)[] buf, SocketFlags flags, Address to) { assert(0); }
+            @safe ptrdiff_t sendTo(const(void)[] buf, Address to) { assert(0); }
+            @trusted ptrdiff_t sendTo(const(void)[] buf, SocketFlags flags) { assert(0); }
+            @safe ptrdiff_t sendTo(const(void)[] buf) { assert(0); }
+            @trusted ptrdiff_t receive(void[] buf, SocketFlags flags) { assert(0); }
+            @safe ptrdiff_t receive(void[] buf) { assert(0); }
+            @trusted ptrdiff_t receiveFrom(void[] buf, SocketFlags flags, ref Address from) { assert(0); }
+            @safe ptrdiff_t receiveFrom(void[] buf, ref Address from) { assert(0); }
+            @trusted ptrdiff_t receiveFrom(void[] buf, SocketFlags flags) { assert(0); }
+            @safe ptrdiff_t receiveFrom(void[] buf) { assert(0); }
+            @trusted int getOption(SocketOptionLevel level, SocketOption option, void[] result) { assert(0); }
+            @trusted int getOption(SocketOptionLevel level, SocketOption option, out int32_t result) { assert(0); }
+            @trusted int getOption(SocketOptionLevel level, SocketOption option, out Linger result) { assert(0); }
+            @trusted void getOption(SocketOptionLevel level, SocketOption option, out Duration result) { assert(0); }
+            @trusted void setOption(SocketOptionLevel level, SocketOption option, void[] value) { assert(0); }
+            @trusted void setOption(SocketOptionLevel level, SocketOption option, int32_t value) { assert(0); }
+            @trusted void setOption(SocketOptionLevel level, SocketOption option, Linger value) { assert(0); }
+            @trusted void setOption(SocketOptionLevel level, SocketOption option, Duration value) { assert(0); }
+            @safe string getErrorText() { assert(0); }
+            @trusted void setKeepAlive(int time, int interval) { assert(0); }
+            protected pure nothrow @safe Address createAddress() { assert(0); }
+        }
+    }
+}
+
 /**
  * Creates a pair of connected sockets.
  *
  * The two sockets are indistinguishable.
  *
  * Throws: $(D SocketException) if creation of the sockets fails.
- *
- * Example:
- * ---
- * immutable ubyte[] data = [1, 2, 3, 4];
- * auto pair = socketPair();
- * scope(exit) foreach (s; pair) s.close();
- *
- * pair[0].send(data);
- *
- * auto buf = new ubyte[data.length];
- * pair[1].receive(buf);
- * assert(buf == data);
- * ---
  */
 Socket[2] socketPair() @trusted
 {
@@ -3496,7 +3565,7 @@ Socket[2] socketPair() @trusted
         Socket toSocket(size_t id)
         {
             auto s = new Socket;
-            s.setSock(cast(socket_t)socks[id]);
+            s.setSock(cast(socket_t) socks[id]);
             s._family = AddressFamily.UNIX;
             return s;
         }
@@ -3525,7 +3594,8 @@ Socket[2] socketPair() @trusted
         static assert(false);
 }
 
-unittest
+///
+@safe unittest
 {
     immutable ubyte[] data = [1, 2, 3, 4];
     auto pair = socketPair();

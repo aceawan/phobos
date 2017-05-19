@@ -20,9 +20,7 @@
  *  is not yet finalized and will probably change.
  *
  * Macros:
- *      WIKI = Phobos/StdMathSpecial
- *
- *      TABLE_SV = <table border=1 cellpadding=4 cellspacing=0>
+ *      TABLE_SV = <table border="1" cellpadding="4" cellspacing="0">
  *              <caption>Special Values</caption>
  *              $0</table>
  *      SVH = $(TR $(TH $1) $(TH $2))
@@ -50,7 +48,7 @@
  *
  * Copyright: Based on the CEPHES math library, which is
  *            Copyright (C) 1994 Stephen L. Moshier (moshier@world.std.com).
- * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+ * License:   $(HTTP www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Stephen L. Moshier (original C code). Conversion to D by Don Clugston
  * Source:    $(PHOBOSSRC std/_mathspecial.d)
  */
@@ -130,13 +128,15 @@ real sgnGamma(real x)
         return real.nan;
     }
     long n = rndtol(x);
-    if (x == n) {
+    if (x == n)
+    {
         return x == 0 ?  copysign(1, x) : real.nan;
     }
     return n & 1 ? 1.0 : -1.0;
 }
 
-unittest {
+@safe unittest
+{
     assert(sgnGamma(5.0) == 1.0);
     assert(isNaN(sgnGamma(-3.0)));
     assert(sgnGamma(-0.1) == -1.0);
@@ -153,12 +153,14 @@ unittest {
  */
 real beta(real x, real y)
 {
-    if ((x+y)> MAXGAMMA) {
+    if ((x+y)> MAXGAMMA)
+    {
         return exp(logGamma(x) + logGamma(y) - logGamma(x+y));
     } else return gamma(x) * gamma(y) / gamma(x+y);
 }
 
-unittest {
+@safe unittest
+{
     assert(isIdentical(beta(NaN(0xABC), 4), NaN(0xABC)));
     assert(isIdentical(beta(2, NaN(0xABC)), NaN(0xABC)));
 }
@@ -179,7 +181,7 @@ real digamma(real x)
 /** Log Minus Digamma function
  *
  *  logmdigamma(x) = log(x) - digamma(x)
- * 
+ *
  *  See_Also: $(LREF digamma), $(LREF logmdigammaInverse).
  */
 real logmdigamma(real x)
@@ -188,9 +190,9 @@ real logmdigamma(real x)
 }
 
 /** Inverse of the Log Minus Digamma function
- * 
+ *
  *  Given y, the function finds x such log(x) - digamma(x) = y.
- * 
+ *
  *  See_Also: $(LREF logmdigamma), $(LREF digamma).
  */
 real logmdigammaInverse(real x)
@@ -349,7 +351,7 @@ real normalDistribution(real x)
  */
 real normalDistributionInverse(real p)
 in {
-  assert(p>=0.0L && p<=1.0L, "Domain error");
+  assert(p >= 0.0L && p <= 1.0L, "Domain error");
 }
 body
 {

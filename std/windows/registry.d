@@ -4,7 +4,7 @@
     Copyright: Copyright 2003-2004 by Matthew Wilson and Synesis Software
                Written by Matthew Wilson
 
-    License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+    License:   $(HTTP www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
 
     Author:    Matthew Wilson, Kenji Hara
 
@@ -53,7 +53,7 @@ debug(winreg) import std.stdio;
 
 private
 {
-    extern (Windows) int lstrlenW(LPCWSTR lpString);
+    import core.sys.windows.winbase : lstrlenW;
 
     void enforceSucc(LONG res, lazy string message, string fn = __FILE__, size_t ln = __LINE__)
     {
@@ -64,36 +64,38 @@ private
 
 /* ************* Exceptions *************** */
 
-/**
- */
-class Win32Exception : Exception
+// Do not use. Left for compatibility.
+class Win32Exception : WindowsException
 {
-    int error;
-
-    @safe pure nothrow
+    @safe
     this(string message, string fn = __FILE__, size_t ln = __LINE__, Throwable next = null)
     {
-        super(message, fn, ln, next);
+        super(0, message, fn, ln);
     }
 
-    @safe pure
+    @safe
     this(string message, int errnum, string fn = __FILE__, size_t ln = __LINE__, Throwable next = null)
     {
-        super(text(message, " (", errnum, ")"), fn, ln, next);
-        error = errnum;
+        super(errnum, message, fn, ln);
     }
+
+    @property int error() { return super.code; }
 }
 
-unittest {
+version(unittest) import std.string : startsWith, endsWith;
+
+@safe unittest
+{
     // Test that we can throw and catch one by its own type
     string message = "Test W1";
 
     auto e = collectException!Win32Exception(
         enforce(false, new Win32Exception(message)));
-    assert(e.msg == message);
+    assert(e.msg.startsWith(message));
 }
 
-unittest {
+@system unittest
+{
     // ditto
     string message = "Test W2";
     int    code    = 5;
@@ -101,10 +103,7 @@ unittest {
     auto e = collectException!Win32Exception(
         enforce(false, new Win32Exception(message, code)));
     assert(e.error == code);
-
-    // CAUTION: this test is to be removed in D1
-    //          because e.msg does not contains the (code) section.
-    assert(e.msg == text(message, " (", code, ")"));
+    assert(e.msg.startsWith(message));
 }
 
 /**
@@ -120,7 +119,7 @@ public:
         Params:
             message = The message associated with the exception.
      */
-    @safe pure
+    @safe
     this(string message, string fn = __FILE__, size_t ln = __LINE__, Throwable next = null)
     {
         super(message, fn, ln, next);
@@ -133,14 +132,14 @@ public:
             message = The message associated with the exception.
             error = The Win32 error number associated with the exception.
      */
-    @safe pure
+    @safe
     this(string message, int error, string fn = __FILE__, size_t ln = __LINE__, Throwable next = null)
     {
         super(message, error, fn, ln, next);
     }
 }
 
-unittest
+@system unittest
 {
     // (i) Test that we can throw and catch one by its own type
     string message = "Test 1";
@@ -149,20 +148,17 @@ unittest
     auto e = collectException!RegistryException(
         enforce(false, new RegistryException(message, code)));
     assert(e.error == code);
-
-    // CAUTION: this test is to be removed in D1
-    //          because e.msg does not contains the (code) section.
-    assert(e.msg == text(message, " (", code, ")"));
+    assert(e.msg.startsWith(message));
 }
 
-unittest
+@safe unittest
 {
     // ditto
     string message = "Test 2";
 
     auto e = collectException!RegistryException(
         enforce(false, new RegistryException(message)));
-    assert(e.msg == message);
+    assert(e.msg.startsWith(message));
 }
 
 /* ************* public enumerations *************** */
@@ -228,27 +224,26 @@ enum REG_VALUE_TYPE : DWORD
 
 /* ************* private *************** */
 
-private
-{
-    enum DWORD DELETE                   =   0x00010000L;
-    enum DWORD READ_CONTROL             =   0x00020000L;
-    enum DWORD WRITE_DAC                =   0x00040000L;
-    enum DWORD WRITE_OWNER              =   0x00080000L;
-    enum DWORD SYNCHRONIZE              =   0x00100000L;
+private import core.sys.windows.winnt :
+    DELETE                  ,
+    READ_CONTROL            ,
+    WRITE_DAC               ,
+    WRITE_OWNER             ,
+    SYNCHRONIZE             ,
 
-    enum DWORD STANDARD_RIGHTS_REQUIRED =   0x000F0000L;
+    STANDARD_RIGHTS_REQUIRED,
 
-    enum DWORD STANDARD_RIGHTS_READ     =   0x00020000L/* READ_CONTROL */;
-    enum DWORD STANDARD_RIGHTS_WRITE    =   0x00020000L/* READ_CONTROL */;
-    enum DWORD STANDARD_RIGHTS_EXECUTE  =   0x00020000L/* READ_CONTROL */;
+    STANDARD_RIGHTS_READ    ,
+    STANDARD_RIGHTS_WRITE   ,
+    STANDARD_RIGHTS_EXECUTE ,
 
-    enum DWORD STANDARD_RIGHTS_ALL      =   0x001F0000L;
+    STANDARD_RIGHTS_ALL     ,
 
-    enum DWORD SPECIFIC_RIGHTS_ALL      =   0x0000FFFFL;
+    SPECIFIC_RIGHTS_ALL     ;
 
-    enum DWORD REG_CREATED_NEW_KEY      =   0x00000001;
-    enum DWORD REG_OPENED_EXISTING_KEY  =   0x00000002;
-}
+private import core.sys.windows.winreg :
+    REG_CREATED_NEW_KEY     ,
+    REG_OPENED_EXISTING_KEY ;
 
 // Returns samDesired but without WoW64 flags if not in WoW64 mode
 // for compatibility with Windows 2000
@@ -287,9 +282,9 @@ body
      * these hive keys is ignored, we'd rather not trust the Win32
      * API.
      */
-    if (cast(uint)hkey & 0x80000000)
+    if (cast(uint) hkey & 0x80000000)
     {
-        switch (cast(uint)hkey)
+        switch (cast(uint) hkey)
         {
             case HKEY_CLASSES_ROOT:
             case HKEY_CURRENT_USER:
@@ -381,9 +376,9 @@ in
 body
 {
     /* Can't duplicate standard keys, but don't need to, so can just return */
-    if (cast(uint)hkey & 0x80000000)
+    if (cast(uint) hkey & 0x80000000)
     {
-        switch (cast(uint)hkey)
+        switch (cast(uint) hkey)
         {
             case HKEY_CLASSES_ROOT:
             case HKEY_CURRENT_USER:
@@ -569,12 +564,12 @@ body
             version(LittleEndian)
                 value = to!string(u.dw);
             else
-                value = to!string(core.bitop.bswap(u.dw));
+                value = to!string(bswap(u.dw));
             break;
 
         case REG_VALUE_TYPE.REG_DWORD_BIG_ENDIAN:
             version(LittleEndian)
-                value = to!string(core.bitop.bswap(u.dw));
+                value = to!string(bswap(u.dw));
             else
                 value = to!string(u.dw);
             break;
@@ -655,12 +650,12 @@ body
             version(LittleEndian)
                 static assert(REG_VALUE_TYPE.REG_DWORD == REG_VALUE_TYPE.REG_DWORD_LITTLE_ENDIAN);
             else
-                value = core.bitop.bswap(value);
+                value = bswap(value);
             break;
 
         case REG_VALUE_TYPE.REG_DWORD_BIG_ENDIAN:
             version(LittleEndian)
-                value = core.bitop.bswap(value);
+                value = bswap(value);
             else
                 static assert(REG_VALUE_TYPE.REG_DWORD == REG_VALUE_TYPE.REG_DWORD_BIG_ENDIAN);
             break;
@@ -971,7 +966,7 @@ public:
         Params:
             name = The name of the key to delete. May not be $(D null).
      */
-    void deleteKey(string name, REGSAM access = cast(REGSAM)0)
+    void deleteKey(string name, REGSAM access = cast(REGSAM) 0)
     {
         enforce(!name.empty, new RegistryException("Key name is invalid"));
 
@@ -1295,12 +1290,6 @@ public:
         regQueryValue(m_key.m_hkey, m_name, value, m_type);
 
         return value;
-    }
-
-    deprecated("Please use value_QWORD instead.")
-    ulong value_QWORD_LITTLEENDIAN()
-    {
-        return value_QWORD;
     }
 
     /**
@@ -1749,7 +1738,7 @@ private:
 }
 
 
-unittest
+@system unittest
 {
     debug(winreg) scope(success) writeln("unittest @", __FILE__, ":", __LINE__, " succeeded.");
     debug(winreg) writefln("std.windows.registry.unittest read");
@@ -1782,7 +1771,7 @@ unittest
     }
 }
 
-unittest
+@system unittest
 {
     debug(winreg) scope(success) writeln("unittest @", __FILE__, ":", __LINE__, " succeeded.");
     debug(winreg) writefln("std.windows.registry.unittest write");
@@ -1797,7 +1786,10 @@ unittest
     string unittestKeyName = "Temporary key for a D UnitTest which can be deleted afterwards";
     Key unittestKey = HKCU.createKey(unittestKeyName);
     assert(unittestKey);
-    Key cityKey = unittestKey.createKey("CityCollection using foreign names with umlauts and accents: \u00f6\u00e4\u00fc\u00d6\u00c4\u00dc\u00e0\u00e1\u00e2\u00df");
+    Key cityKey = unittestKey.createKey(
+        "CityCollection using foreign names with umlauts and accents: "
+        ~"\u00f6\u00e4\u00fc\u00d6\u00c4\u00dc\u00e0\u00e1\u00e2\u00df"
+    );
     cityKey.setValue("K\u00f6ln", "Germany"); // Cologne
     cityKey.setValue("\u041c\u0438\u043d\u0441\u043a", "Belarus"); // Minsk
     cityKey.setValue("\u5317\u4eac", "China"); // Bejing
@@ -1845,4 +1837,7 @@ unittest
     unittestKey.deleteKey(stateKey.name);
     unittestKey.deleteKey(cityKey.name);
     HKCU.deleteKey(unittestKeyName);
+
+    auto e = collectException!RegistryException(HKCU.getKey("cDhmxsX9K23a8Uf869uB"));
+    assert(e.msg.endsWith(" (error 2)"));
 }

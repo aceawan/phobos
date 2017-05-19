@@ -3,12 +3,9 @@
 /**
  * Information about the target operating system, environment, and CPU.
  *
- * Macros:
- *      WIKI = Phobos/StdSystem
- *
  *  Copyright: Copyright Digital Mars 2000 - 2011
- *  License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
- *  Authors:   $(WEB digitalmars.com, Walter Bright) and Jonathan M Davis
+ *  License:   $(HTTP www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+ *  Authors:   $(HTTP digitalmars.com, Walter Bright) and Jonathan M Davis
  *  Source:    $(PHOBOSSRC std/_system.d)
  */
 module std.system;
@@ -25,7 +22,7 @@ immutable
             $(D version(linux)), etc.
 
         See_Also:
-            <a href="../version.html#PredefinedVersions">Predefined Versions</a>
+            $(DDSUBLINK spec/version,PredefinedVersions, Predefined Versions)
       +/
     enum OS
     {
@@ -34,6 +31,7 @@ immutable
         linux,     /// All Linux Systems
         osx,       /// Mac OS X
         freeBSD,   /// FreeBSD
+        netBSD,    /// NetBSD
         solaris,   /// Solaris
         android,   /// Android
         otherPosix /// Other Posix Systems
@@ -42,10 +40,11 @@ immutable
     /// The OS that the program was compiled for.
     version(Win32)        OS os = OS.win32;
     else version(Win64)   OS os = OS.win64;
+    else version(Android) OS os = OS.android;
     else version(linux)   OS os = OS.linux;
     else version(OSX)     OS os = OS.osx;
     else version(FreeBSD) OS os = OS.freeBSD;
-    else version(Android) OS os = OS.android;
+    else version(NetBSD)  OS os = OS.netBSD;
     else version(Posix)   OS os = OS.otherPosix;
     else static assert(0, "Unknown OS.");
 
@@ -60,7 +59,7 @@ immutable
             $(D version(LittleEndian)).
 
         See_Also:
-            <a href="../version.html#PredefinedVersions">Predefined Versions</a>
+            $(DDSUBLINK spec/version,PredefinedVersions, Predefined Versions)
       +/
     enum Endian
     {

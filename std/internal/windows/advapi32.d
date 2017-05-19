@@ -4,7 +4,7 @@
  * The only purpose of this module is to do the static construction for
  * std.windows.registry, to eliminate cyclic construction errors.
  *
- * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+ * License:   $(HTTP www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Kenji Hara
  * Source:    $(PHOBOSSRC std/internal/windows/_advapi32.d)
  */
@@ -22,7 +22,7 @@ shared static this()
 {
     // WOW64 is the x86 emulator that allows 32-bit Windows-based applications to run seamlessly on 64-bit Windows
     // IsWow64Process Function - Minimum supported client - Windows Vista, Windows XP with SP2
-    alias extern(Windows) BOOL function(HANDLE, PBOOL) fptr_t;
+    alias fptr_t = extern(Windows) BOOL function(HANDLE, PBOOL);
     auto hKernel = GetModuleHandleA("kernel32");
     auto IsWow64Process = cast(fptr_t) GetProcAddress(hKernel, "IsWow64Process");
     BOOL bIsWow64;
